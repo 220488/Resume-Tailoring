@@ -12,70 +12,15 @@ Streamlit UI:
 import json
 import requests
 import streamlit as st
-from fpdf import FPDF
-import io
 
 API_URL = "http://localhost:8000"
-
-
-def generate_pdf(tailored_data=None, full_text=None):
-    """Generate PDF from tailored resume data or full text"""
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Tailored Resume", ln=True, align="C")
-    pdf.ln(10)
-    
-    if full_text:
-        # Generate from full text
-        pdf.set_font("Helvetica", "", 10)
-        lines = full_text.split('\n')
-        for line in lines:
-            if line.strip():
-                pdf.multi_cell(0, 5, line)
-            else:
-                pdf.ln(3)
-    else:
-        # Generate from structured data
-        # Professional Summary
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Professional Summary", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        summary = tailored_data.get("professional_summary", "")
-        pdf.multi_cell(0, 5, summary)
-        pdf.ln(5)
-        
-        # Skills
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Skills", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        skills = tailored_data.get("reordered_skills", [])
-        skills_text = " • ".join(skills) if skills else "—"
-        pdf.multi_cell(0, 5, skills_text)
-        pdf.ln(5)
-        
-        # Updated Achievements
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Updated Achievements", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        bullets = tailored_data.get("rewritten_bullets", [])
-        for i, bullet in enumerate(bullets, 1):
-            revised = bullet.get("revised", "")
-            if revised.strip():
-                pdf.multi_cell(0, 5, f"{i}. {revised}")
-    
-    pdf_bytes = io.BytesIO()
-    pdf_output = pdf.output()
-    pdf_bytes.write(pdf_output)
-    pdf_bytes.seek(0)
-    return pdf_bytes.getvalue()
-
 
 # Page config 
 st.set_page_config(
     page_title="Resume Tailoring Assistant",
     page_icon="📄",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 # Session state initialization
@@ -89,8 +34,8 @@ if "show_modifications" not in st.session_state:
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
+    padding-top: 0.8rem;
+    padding-bottom: 1.2rem;
     max-width: 1180px;
 }
 h1, h2, h3 {
@@ -104,11 +49,24 @@ h1, h2, h3 {
 }
 .stButton > button {
     border-radius: 14px;
-    height: 3.2rem;
+    height: 3rem;
     font-weight: 600;
+}
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    padding: 14px 16px;
+    border-radius: 16px;
 }
 [data-testid="stMetricValue"] {
     font-size: 2rem;
+}
+div[data-testid="stExpander"] {
+    border-radius: 14px !important;
+    border: 1px solid #e5e7eb !important;
+}
+button[kind="secondary"] {
+    border-radius: 12px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -116,20 +74,20 @@ h1, h2, h3 {
 # Header 
 st.markdown("""
 <div style="
-    padding: 1.2rem 1.4rem;
-    border-radius: 18px;
-    background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(16,185,129,0.10));
-    margin-bottom: 1.2rem;
+    padding: 1.1rem 1.4rem;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #eef2ff 0%, #ecfeff 100%);
+    border: 1px solid rgba(0,0,0,0.06);
+    margin-bottom: 1rem;
 ">
-    <h1 style="margin-bottom: 0.3rem;">AI Resume Tailoring Assistant</h1>
-    <p style="margin: 0; opacity: 0.9;">
+    <h1 style="margin: 0; font-size: 2.1rem; line-height: 1.05;">AI Resume Tailoring Assistant</h1>
+    <p style="margin: 0.45rem 0 0 0; font-size: 0.98rem; color: #4b5563;">
         Match your existing resume to a target role with structured analysis and controlled AI rewriting.
     </p>
 </div>
 """, unsafe_allow_html=True)
 
-with st.container(border=True):
-    st.markdown("### How to Use")
+with st.expander("How to Use", expanded=False):
     st.markdown("""
 1. Paste a target job description or choose a sample role  
 2. Upload your existing resume in PDF format  
@@ -264,7 +222,7 @@ with col_left:
             st.text_area(
                 "Sample JD Preview",
                 value=jd_text,
-                height=300,
+                height=220,
                 disabled=True
             )
 
@@ -275,10 +233,13 @@ with col_right:
             label="Upload your resume (PDF only)",
             type=["pdf"],
         )
-
-st.divider()
-
-submitted = st.button("Tailor My Resume", type="primary", use_container_width=True)
+        
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        submitted = st.button(
+            "Tailor My Resume",
+            type="primary",
+            use_container_width=True
+        )
 
 # Main action
 if submitted:
@@ -311,6 +272,7 @@ if submitted:
             )
             response.raise_for_status()
             st.session_state.analysis_result = response.json()
+            st.switch_page("pages/1_Results.py")
 
         except requests.exceptions.ConnectionError:
             st.error("Cannot reach the backend. Make sure the FastAPI server is running on port 8000.")
@@ -327,257 +289,3 @@ if submitted:
         except Exception as e:
             st.error(f"Unexpected error: {e}")
             st.stop()
-    
-if st.session_state.analysis_result:
-    result = st.session_state.analysis_result
-    st.success("Done! See your tailored resume below.")
-
-    # Summary metrics preview
-    raw_alignment = result.get("alignment", "{}")
-    alignment_preview = {}
-
-    try:
-        alignment_preview = json.loads(raw_alignment)
-    except json.JSONDecodeError:
-        alignment_preview = {}
-
-    matched_preview = alignment_preview.get("matched", [])
-    missing_preview = alignment_preview.get("missing", [])
-    weak_preview = alignment_preview.get("weak_matches", [])
-
-    total_items = len(matched_preview) + len(missing_preview) + len(weak_preview)
-    fit_score = round(((len(matched_preview) + 0.5 * len(weak_preview)) / total_items) * 100) if total_items > 0 else 0
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Overall Fit", f"{fit_score}%")
-    m2.metric("Matched", len(matched_preview))
-    m3.metric("Missing", len(missing_preview))
-    m4.metric("Weak Matches", len(weak_preview))
-
-    st.divider()
-
-    # Tabs
-
-    tab_tailored, tab_alignment, tab_jd, tab_resume = st.tabs([
-        "Final Resume",
-        "Match Analysis",
-        "Parsed JD",
-        "Parsed Resume",
-    ])
-
-    # Tab 1 — Tailored resume
-    with tab_tailored:
-        raw = result.get("tailored_resume", "")
-        try:
-            tailored = json.loads(raw)
-
-            # Check if full resume text is available
-            full_resume_text = tailored.get("full_resume_text", "")
-            if full_resume_text:
-                # Display full resume
-                with st.container(border=True):
-                    st.subheader("Complete Tailored Resume")
-                    st.text_area(
-                        "Full Resume Content",
-                        value=full_resume_text,
-                        height=400,
-                        disabled=True
-                    )
-                    
-                # View modifications button
-                if st.button("View Modifications", key="view_mods"):
-                    st.session_state.show_modifications = not st.session_state.get("show_modifications", False)
-                    
-                if st.session_state.get("show_modifications", False):
-                    with st.expander("Modifications Details", expanded=True):
-                        with st.container(border=True):
-                            st.subheader("Professional Summary")
-                            summary_text = tailored.get("professional_summary", "—")
-                            st.write(summary_text)
-                            col_copy1, _ = st.columns([1, 4])
-                            with col_copy1:
-                                st.caption("Copy the text above manually (Ctrl+C)")
-
-                        with st.container(border=True):
-                            st.subheader("Reordered Skills")
-                            skills = tailored.get("reordered_skills", [])
-                            if skills:
-                                skills_text = "  •  ".join(skills)
-                                st.write(skills_text)
-                                col_copy2, _ = st.columns([1, 4])
-                                with col_copy2:
-                                    st.caption("Copy the text above manually (Ctrl+C)")
-                            else:
-                                st.write("—")
-
-                        with st.container(border=True):
-                            st.subheader("Rewritten Bullet Points")
-                            bullets = tailored.get("rewritten_bullets", [])
-
-                            if bullets:
-                                improved_count = len([b for b in bullets if b.get('revised', '').strip()])
-                                st.metric("Bullets Optimized", f"{improved_count}/{len(bullets)}")
-                                    
-                                for i, b in enumerate(bullets, 1):
-                                    with st.expander(f"Bullet {i}", expanded=(i == 1)):
-                                        c1, c2 = st.columns(2)
-                                        with c1:
-                                            with st.container(border=True):
-                                                st.markdown("**Original**")
-                                                st.write(b.get("original", ""))
-                                        with c2:
-                                            with st.container(border=True):
-                                                st.markdown("**Revised**")
-                                                st.write(b.get("revised", ""))
-                                        st.caption(f"Rationale: {b.get('rationale', '')}")
-                            else:
-                                st.info("No bullet rewrites generated.")
-                
-            else:
-                # Fallback to original structure if no full text
-                with st.container(border=True):
-                    st.subheader("Professional Summary")
-                    summary_text = tailored.get("professional_summary", "—")
-                    st.write(summary_text)
-                    col_copy1, _ = st.columns([1, 4])
-                    with col_copy1:
-                        st.caption("Copy the text above manually (Ctrl+C)")
-
-                with st.container(border=True):
-                    st.subheader("Reordered Skills")
-                    skills = tailored.get("reordered_skills", [])
-                    if skills:
-                        skills_text = "  •  ".join(skills)
-                        st.write(skills_text)
-                        col_copy2, _ = st.columns([1, 4])
-                        with col_copy2:
-                            st.caption("Copy the text above manually (Ctrl+C)")
-                    else:
-                        st.write("—")
-
-                with st.container(border=True):
-                    st.subheader("Rewritten Bullet Points")
-                    bullets = tailored.get("rewritten_bullets", [])
-
-                    if bullets:
-                        improved_count = len([b for b in bullets if b.get('revised', '').strip()])
-                        st.metric("Bullets Optimized", f"{improved_count}/{len(bullets)}")
-                            
-                        for i, b in enumerate(bullets, 1):
-                            with st.expander(f"Bullet {i}", expanded=(i == 1)):
-                                c1, c2 = st.columns(2)
-                                with c1:
-                                    with st.container(border=True):
-                                        st.markdown("**Original**")
-                                        st.write(b.get("original", ""))
-                                with c2:
-                                    with st.container(border=True):
-                                        st.markdown("**Revised**")
-                                        st.write(b.get("revised", ""))
-                                st.caption(f"Rationale: {b.get('rationale', '')}")
-                    else:
-                        st.info("No bullet rewrites generated.")
-
-            st.divider()
-            st.subheader("Download Complete Resume")
-                
-            # Generate PDF from full resume text if available
-            if full_resume_text:
-                pdf_data = generate_pdf(full_text=full_resume_text)
-            else:
-                # Fallback to original PDF generation
-                pdf_data = generate_pdf(tailored_data=tailored)
-                
-            plain_text = full_resume_text if full_resume_text else f"""TAILORED RESUME
-
-Professional Summary:
-{tailored.get('professional_summary', '')}
-
-Skills:
-{chr(10).join('• ' + skill for skill in tailored.get('reordered_skills', []))}
-
-Updated Achievements:
-{chr(10).join('• ' + b.get('revised', '') for b in tailored.get('rewritten_bullets', []) if b.get('revised', '').strip())}
-"""
-                
-            dl_col1, dl_col2, dl_col3 = st.columns(3)
-                
-            with dl_col1:
-                st.download_button(
-                    label="PDF",
-                    data=pdf_data,
-                    file_name="tailored_resume.pdf",
-                    mime="application/pdf"
-                )
-                
-            with dl_col2:
-                st.download_button(
-                    label="Text",
-                    data=plain_text,
-                    file_name="tailored_resume.txt",
-                    mime="text/plain"
-                )
-                
-            with dl_col3:
-                st.download_button(
-                    label="JSON",
-                    data=json.dumps(tailored, indent=2),
-                    file_name="tailored_resume.json",
-                    mime="application/json"
-                )
-
-        except json.JSONDecodeError:
-            st.markdown(raw)
-
-    # Tab 2 — Alignment report
-    with tab_alignment:
-        raw = result.get("alignment", "{}")
-        try:
-            alignment = json.loads(raw)
-
-            matched = alignment.get("matched", [])
-            missing = alignment.get("missing", [])
-            weak_matches = alignment.get("weak_matches", [])
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Matched", len(matched))
-            c2.metric("Missing", len(missing))
-            c3.metric("Weak Matches", len(weak_matches))
-
-            if matched:
-                st.subheader("Matched")
-                for m in matched:
-                    st.markdown(f"- **{m.get('item')}** *(from {m.get('source')})*")
-
-            if missing:
-                st.subheader("Missing")
-                for m in missing:
-                    importance = m.get("importance", "")
-                    colour = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(importance, "⚪")
-                    st.markdown(f"- {colour} **{m.get('item')}** *(from {m.get('source')})*")
-
-            if weak_matches:
-                st.subheader("Weakly Expressed")
-                for w in weak_matches:
-                    with st.expander(w.get("jd_requirement", "")):
-                        st.markdown(f"**Resume bullet:** {w.get('resume_bullet', '')}")
-                        st.caption(w.get("reason", ""))
-
-        except json.JSONDecodeError:
-            st.json(raw)
-
-    # Tab 3 — JD analysis
-    with tab_jd:
-        raw = result.get("jd_parsed", "{}")
-        try:
-            st.json(json.loads(raw))
-        except json.JSONDecodeError:
-            st.text(raw)
-
-    # Tab 4 — Resume analysis
-    with tab_resume:
-        raw = result.get("resume_parsed", "{}")
-        try:
-            st.json(json.loads(raw))
-        except json.JSONDecodeError:
-            st.text(raw)
