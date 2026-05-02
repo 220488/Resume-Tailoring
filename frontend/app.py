@@ -34,7 +34,7 @@ if "show_modifications" not in st.session_state:
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 0.8rem;
+    padding-top: 1.6rem;
     padding-bottom: 1.2rem;
     max-width: 1180px;
 }
@@ -74,16 +74,33 @@ button[kind="secondary"] {
 # Header 
 st.markdown("""
 <div style="
-    padding: 1.1rem 1.4rem;
-    border-radius: 20px;
-    background: linear-gradient(135deg, #eef2ff 0%, #ecfeff 100%);
-    border: 1px solid rgba(0,0,0,0.06);
-    margin-bottom: 1rem;
+    margin: 0.35rem 0 1rem 0;
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid #cfd8e3;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+    background: #f8fbff;
 ">
-    <h1 style="margin: 0; font-size: 2.1rem; line-height: 1.05;">AI Resume Tailoring Assistant</h1>
-    <p style="margin: 0.45rem 0 0 0; font-size: 0.98rem; color: #4b5563;">
-        Match your existing resume to a target role with structured analysis and controlled AI rewriting.
-    </p>
+    <div style="
+        padding: 1.25rem 1.5rem;
+        background: linear-gradient(135deg, #eef2ff 0%, #ecfeff 100%);
+    ">
+        <h1 style="
+            margin: 0;
+            font-size: 2.1rem;
+            line-height: 1.08;
+            color: #2f3441;
+        ">
+            AI Resume Tailoring Assistant
+        </h1>
+        <p style="
+            margin: 0.5rem 0 0 0;
+            font-size: 0.98rem;
+            color: #4b5563;
+        ">
+            Match your existing resume to a target role with structured analysis and controlled AI rewriting.
+        </p>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
