@@ -88,17 +88,28 @@ h1, h2, h3 {
     font-weight: 600;
 }
 [data-testid="stMetric"] {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
     padding: 14px 16px;
     border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+[data-testid="stMetricLabel"] {
+    color: #475569;
 }
 [data-testid="stMetricValue"] {
     font-size: 2rem;
+    color: #1e293b;
 }
 div[data-testid="stExpander"] {
     border-radius: 14px !important;
     border: 1px solid #e5e7eb !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    border: 1px solid #dbeafe !important;
+    border-radius: 16px !important;
+    padding: 0.45rem 0.6rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -127,6 +138,24 @@ weak_preview = alignment_preview.get("weak_matches", [])
 total_items = len(matched_preview) + len(missing_preview) + len(weak_preview)
 fit_score = round(((len(matched_preview) + 0.5 * len(weak_preview)) / total_items) * 100) if total_items > 0 else 0
 
+st.markdown(
+    f"""
+    <div style="
+        margin: 0.3rem 0 1rem 0;
+        padding: 0.9rem 1rem;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+        border: 1px solid #bbf7d0;
+        color: #166534;
+        font-size: 0.95rem;
+        font-weight: 500;
+    ">
+        Resume tailored successfully · Estimated fit: <strong>{fit_score}%</strong>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Overall Fit", f"{fit_score}%")
 m2.metric("Matched", len(matched_preview))
@@ -135,69 +164,74 @@ m4.metric("Weak Matches", len(weak_preview))
 
 st.divider()
 
-tab_resume, tab_match, tab_mods = st.tabs([
-    "Final Resume",
-    "Match Summary",
-    "Key Modifications",
-])
+raw = result.get("tailored_resume", "")
+try:
+    tailored = json.loads(raw)
+except json.JSONDecodeError:
+    st.error("Tailored resume output is not valid JSON.")
+    st.stop()
 
-with tab_resume:
-    raw = result.get("tailored_resume", "")
-    try:
-        tailored = json.loads(raw)
-        full_resume_text = tailored.get("full_resume_text", "")
-        full_resume_text = re.sub(r"\n{3,}", "\n\n", full_resume_text).strip()
+full_resume_text = tailored.get("full_resume_text", "")
+full_resume_text = re.sub(r"\n{3,}", "\n\n", full_resume_text).strip()
 
-        if full_resume_text:
-            with st.container(border=True):
-                st.subheader("Complete Tailored Resume")
-                st.markdown(
-                    f"""
-                    <div style="
-                        background: white;
-                        border: 1px solid #e5e7eb;
-                        border-radius: 16px;
-                        padding: 20px 22px;
-                        line-height: 1.8;
-                        font-size: 16px;
-                        color: #374151;
-                        white-space: pre-wrap;
-                    ">
-                    {full_resume_text}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-        else:
-            with st.container(border=True):
-                st.subheader("Tailored Resume Preview")
+selected_view = st.segmented_control(
+    "Results Navigation",
+    ["Final Resume", "Match Summary", "Key Modifications"],
+    default="Final Resume",
+    width="stretch",
+    label_visibility="collapsed",
+)
 
-                st.markdown("**Professional Summary**")
-                st.write(tailored.get("professional_summary", "—"))
+if selected_view == "Final Resume":
+    if full_resume_text:
+        with st.container(border=True):
+            st.subheader("Complete Tailored Resume")
+            st.markdown(
+                f"""
+                <div style="
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 20px 22px;
+                    line-height: 1.8;
+                    font-size: 16px;
+                    color: #374151;
+                    white-space: pre-wrap;
+                ">
+                {full_resume_text}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+    else:
+        with st.container(border=True):
+            st.subheader("Tailored Resume Preview")
 
-                st.markdown("**Skills**")
-                skills = tailored.get("reordered_skills", [])
-                st.write(" • ".join(skills) if skills else "—")
+            st.markdown("**Professional Summary**")
+            st.write(tailored.get("professional_summary", "—"))
 
-                st.markdown("**Updated Achievements**")
-                bullets = tailored.get("rewritten_bullets", [])
-                if bullets:
-                    for i, bullet in enumerate(bullets, 1):
-                        revised = bullet.get("revised", "")
-                        if revised.strip():
-                            st.markdown(f"{i}. {revised}")
-                else:
-                    st.write("—")
+            st.markdown("**Skills**")
+            skills = tailored.get("reordered_skills", [])
+            st.write(" • ".join(skills) if skills else "—")
 
-        st.divider()
-        st.subheader("Export Resume")
+            st.markdown("**Updated Achievements**")
+            bullets = tailored.get("rewritten_bullets", [])
+            if bullets:
+                for i, bullet in enumerate(bullets, 1):
+                    revised = bullet.get("revised", "")
+                    if revised.strip():
+                        st.markdown(f"{i}. {revised}")
+            else:
+                st.write("—")
 
-        pdf_data = generate_pdf(
-            full_text=full_resume_text if full_resume_text else None,
-            tailored_data=tailored if not full_resume_text else None
-        )
+    st.divider()
 
-        plain_text = full_resume_text if full_resume_text else f"""TAILORED RESUME
+    pdf_data = generate_pdf(
+        full_text=full_resume_text if full_resume_text else None,
+        tailored_data=tailored if not full_resume_text else None
+    )
+
+    plain_text = full_resume_text if full_resume_text else f"""TAILORED RESUME
 
 Professional Summary:
 {tailored.get('professional_summary', '')}
@@ -209,11 +243,15 @@ Updated Achievements:
 {chr(10).join('• ' + b.get('revised', '') for b in tailored.get('rewritten_bullets', []) if b.get('revised', '').strip())}
 """
 
-        dl_col1, dl_col2, dl_col3, _ = st.columns([1, 1, 1, 3])
+    with st.container(border=True):
+        st.subheader("Export Resume")
+        st.caption("Download the tailored resume in your preferred format.")
+
+        dl_col1, dl_col2, dl_col3 = st.columns(3)
 
         with dl_col1:
             st.download_button(
-                label="PDF Resume",
+                "PDF Resume",
                 data=pdf_data,
                 file_name="tailored_resume.pdf",
                 mime="application/pdf",
@@ -221,25 +259,22 @@ Updated Achievements:
             )
         with dl_col2:
             st.download_button(
-                label="Text Version",
-                data=plain_text,
-                file_name="tailored_resume.txt",
-                mime="text/plain",
-                use_container_width=True
+               "Text Version",
+               data=plain_text,
+               file_name="tailored_resume.txt",
+               mime="text/plain",
+               use_container_width=True
             )
         with dl_col3:
             st.download_button(
-                label="JSON Output",
+                "JSON Output",
                 data=json.dumps(tailored, indent=2),
                 file_name="tailored_resume.json",
                 mime="application/json",
                 use_container_width=True
             )
 
-    except json.JSONDecodeError:
-        st.error("Tailored resume output is not valid JSON.")
-
-with tab_match:
+elif selected_view == "Match Summary":
     c1, c2, c3 = st.columns(3)
     c1.metric("Matched", len(matched_preview))
     c2.metric("Missing", len(missing_preview))
@@ -264,40 +299,34 @@ with tab_match:
                 st.markdown(f"**Resume bullet:** {w.get('resume_bullet', '')}")
                 st.caption(w.get("reason", ""))
 
-with tab_mods:
-    raw = result.get("tailored_resume", "")
-    try:
-        tailored = json.loads(raw)
+elif selected_view == "Key Modifications":
+    with st.container(border=True):
+        st.subheader("Professional Summary")
+        st.write(tailored.get("professional_summary", "—"))
 
-        with st.container(border=True):
-            st.subheader("Professional Summary")
-            st.write(tailored.get("professional_summary", "—"))
+    with st.container(border=True):
+        st.subheader("Reordered Skills")
+        skills = tailored.get("reordered_skills", [])
+        if skills:
+            st.write("  •  ".join(skills))
+        else:
+            st.write("—")
 
-        with st.container(border=True):
-            st.subheader("Reordered Skills")
-            skills = tailored.get("reordered_skills", [])
-            if skills:
-                st.write("  •  ".join(skills))
-            else:
-                st.write("—")
-
-        with st.container(border=True):
-            st.subheader("Rewritten Bullet Points")
-            bullets = tailored.get("rewritten_bullets", [])
-            if bullets:
-                for i, b in enumerate(bullets, 1):
-                    with st.expander(f"Bullet {i}", expanded=(i == 1)):
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            with st.container(border=True):
-                                st.markdown("**Original**")
-                                st.write(b.get("original", ""))
-                        with c2:
-                            with st.container(border=True):
-                                st.markdown("**Revised**")
-                                st.write(b.get("revised", ""))
-                        st.caption(f"Rationale: {b.get('rationale', '')}")
-            else:
-                st.info("No bullet rewrites generated.")
-    except json.JSONDecodeError:
-        st.error("Tailored resume output is not valid JSON.")
+    with st.container(border=True):
+        st.subheader("Rewritten Bullet Points")
+        bullets = tailored.get("rewritten_bullets", [])
+        if bullets:
+            for i, b in enumerate(bullets, 1):
+                with st.expander(f"Bullet {i}", expanded=(i == 1)):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        with st.container(border=True):
+                            st.markdown("**Original**")
+                            st.write(b.get("original", ""))
+                    with c2:
+                        with st.container(border=True):
+                            st.markdown("**Revised**")
+                            st.write(b.get("revised", ""))
+                    st.caption(f"Rationale: {b.get('rationale', '')}")
+        else:
+            st.info("No bullet rewrites generated.")
