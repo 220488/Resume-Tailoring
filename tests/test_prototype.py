@@ -141,18 +141,27 @@ def get_final_resume_text(tailored: dict) -> str:
     return "\n".join([p for p in parts if p]).strip()
 
 
-# Generates PDF bytes for export testing, based on the current frontend export logic.
+def sanitize_pdf_text(text: str) -> str:
+    text = str(text or "")
+    return (
+        text.replace("•", "-")
+            .replace("—", "-")
+            .replace("–", "-")
+            .replace("\u00a0", " ")
+    )
+
+
 def generate_pdf_bytes(tailored_data=None, full_text=None) -> bytes:
     """Generate PDF bytes for export testing, based on the current frontend export logic."""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Tailored Resume", ln=True, align="C")
+    pdf.cell(0, 10, sanitize_pdf_text("Tailored Resume"), ln=True, align="C")
     pdf.ln(10)
 
     if full_text:
         pdf.set_font("Helvetica", "", 10)
-        lines = full_text.split("\n")
+        lines = sanitize_pdf_text(full_text).split("\n")
         usable_width = pdf.w - pdf.l_margin - pdf.r_margin
 
         for line in lines:
@@ -167,7 +176,7 @@ def generate_pdf_bytes(tailored_data=None, full_text=None) -> bytes:
         pdf.set_font("Helvetica", "B", 12)
         pdf.cell(0, 10, "Professional Summary", ln=True)
         pdf.set_font("Helvetica", "", 10)
-        summary = tailored_data.get("professional_summary", "")
+        summary = sanitize_pdf_text(tailored_data.get("professional_summary", ""))
         pdf.multi_cell(0, 5, summary)
         pdf.ln(5)
 
@@ -175,7 +184,7 @@ def generate_pdf_bytes(tailored_data=None, full_text=None) -> bytes:
         pdf.cell(0, 10, "Skills", ln=True)
         pdf.set_font("Helvetica", "", 10)
         skills = tailored_data.get("reordered_skills", []) or tailored_data.get("skills", [])
-        skills_text = " • ".join(skills) if skills else "—"
+        skills_text = sanitize_pdf_text(" - ".join(skills) if skills else "-")
         pdf.multi_cell(0, 5, skills_text)
         pdf.ln(5)
 
@@ -186,7 +195,7 @@ def generate_pdf_bytes(tailored_data=None, full_text=None) -> bytes:
         for i, bullet in enumerate(bullets, 1):
             revised = bullet.get("revised", "")
             if revised.strip():
-                pdf.multi_cell(0, 5, f"{i}. {revised}")
+                pdf.multi_cell(0, 5, sanitize_pdf_text(f"{i}. {revised}"))
 
     pdf_output = pdf.output(dest="S")
     if isinstance(pdf_output, str):
@@ -411,14 +420,20 @@ def run_json_structure_test(payload: dict):
         assert "weak_matches" in alignment, "alignment missing key: weak_matches"
 
         # tailored structure: accept either full text or preview mode
-        has_full_text = bool(tailored.get("full_resume_text", "").strip())
+        has_full_text = bool(str(tailored.get("full_resume_text") or "").strip())
+
         has_preview_mode = all(
             key in tailored for key in ["professional_summary", "reordered_skills", "rewritten_bullets"]
         )
 
-        assert has_full_text or has_preview_mode, (
-            "tailored_resume must contain either full_resume_text "
-            "or preview fields (professional_summary, reordered_skills, rewritten_bullets)"
+        has_structured_mode = all(
+            key in tailored for key in ["skills", "work_experience", "education"]
+        )
+
+        assert has_full_text or has_preview_mode or has_structured_mode, (
+            "tailored_resume must contain either full_resume_text, "
+            "preview fields (professional_summary, reordered_skills, rewritten_bullets), "
+            "or structured fields (skills, work_experience, education)."
         )
 
         # Ensure preview mode contains expected bullet metadata if present
