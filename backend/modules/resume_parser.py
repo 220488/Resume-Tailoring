@@ -55,6 +55,8 @@ Field notes:
     bullets.text      — original bullet text, copied EXACTLY as written in the resume
     skills_mentioned  — skills the LLM detects are referenced inside that bullet
     end_date          — null if the role is current / present
+
+Implementation credit: pre-processing pipeline and schema validation by linli-14.
 """
 
 import json
@@ -187,10 +189,10 @@ def clean_resume_text(resume_text: str) -> str:
 
 def split_sections(clean_text: str) -> str:
     patterns = {
-        "skills": r"(?im)^(technical skills|skills|core skills|tech stack)\s*$",
-        "education": r"(?im)^(education)\s*$",
-        "work_experience": r"(?im)^(work experience|experience|internship experience)\s*$",
-        "projects": r"(?im)^(projects|project experience)\s*$",
+        "skills":         r"(?im)^(technical skills|skills|core skills|tech stack)\s*$",
+        "education":      r"(?im)^(education)\s*$",
+        "work_experience":r"(?im)^(work experience|experience|internship experience)\s*$",
+        "projects":       r"(?im)^(projects|project experience)\s*$",
     }
     section_spans: list[tuple[int, str]] = []
     for key, pattern in patterns.items():
@@ -218,25 +220,23 @@ def _validate_schema(data: Any) -> bool:
         return False
 
     for skill in data["skills"]:
-        if not isinstance(skill, dict):
-            return False
-        if set(skill.keys()) != {"name", "category"}:
+        if not isinstance(skill, dict) or set(skill.keys()) != {"name", "category"}:
             return False
 
-    for education in data["education"]:
-        if not isinstance(education, dict):
+    for edu in data["education"]:
+        if not isinstance(edu, dict):
             return False
-        required_education = {"degree", "institution", "graduation_year", "gpa", "relevant_coursework"}
-        if not required_education.issubset(education.keys()):
+        if not {"degree", "institution", "graduation_year", "gpa", "relevant_coursework"}.issubset(edu.keys()):
             return False
-        if not isinstance(education.get("relevant_coursework"), list):
+        if not isinstance(edu.get("relevant_coursework"), list):
             return False
 
     for role in data["work_experience"]:
         if not isinstance(role, dict):
             return False
-        required_role = {"company", "title", "start_date", "end_date", "bullets"}
-        if not required_role.issubset(role.keys()) or not isinstance(role.get("bullets"), list):
+        if not {"company", "title", "start_date", "end_date", "bullets"}.issubset(role.keys()):
+            return False
+        if not isinstance(role.get("bullets"), list):
             return False
         for bullet in role["bullets"]:
             if not isinstance(bullet, dict):
@@ -249,8 +249,7 @@ def _validate_schema(data: Any) -> bool:
     for project in data["projects"]:
         if not isinstance(project, dict):
             return False
-        required_project = {"name", "technologies", "bullets"}
-        if not required_project.issubset(project.keys()):
+        if not {"name", "technologies", "bullets"}.issubset(project.keys()):
             return False
         if not isinstance(project.get("technologies"), list) or not isinstance(project.get("bullets"), list):
             return False
@@ -266,6 +265,20 @@ def _validate_schema(data: Any) -> bool:
 
 
 def parse_resume(resume_text: str) -> str:
+    """
+    Parse resume plain text and return structured JSON.
+
+    Pre-processes the raw PDF text (bullet normalization, page-break removal,
+    whitespace repair, section tagging) before sending to the LLM.
+    Validates the schema and retries once on failure.
+
+    Args:
+        resume_text: Plain text extracted from the PDF (by utils.extract_text_from_pdf).
+
+    Returns:
+        A JSON string matching the schema defined in this file's docstring.
+        This string is passed directly to the Alignment Analyzer (Stage 3).
+    """
     cleaned_text = clean_resume_text(resume_text)
     section_view = split_sections(cleaned_text)
 
@@ -284,6 +297,7 @@ def parse_resume(resume_text: str) -> str:
     except json.JSONDecodeError:
         pass
 
+    # Retry once with an explicit error message
     retry_prompt = (
         f"{user_content}\n\n"
         "Your previous output was invalid or schema-incompatible. "
@@ -297,15 +311,14 @@ def parse_resume(resume_text: str) -> str:
     except json.JSONDecodeError:
         pass
 
-    return json.dumps(
-        {
-            "candidate_name": None,
-            "skills": [],
-            "education": [],
-            "work_experience": [],
-            "projects": [],
-        }
-    )
+    # Fallback — safe empty contract so downstream stages don't crash
+    return json.dumps({
+        "candidate_name": None,
+        "skills": [],
+        "education": [],
+        "work_experience": [],
+        "projects": [],
+    })
 
 
 __all__ = ["parse_resume", "clean_resume_text", "split_sections"]
