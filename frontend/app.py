@@ -1,21 +1,19 @@
 """
 Person 6 — Frontend / Prototype Integration & Testing
 
-Streamlit UI:
-- Accepts two inputs: job description text and resume PDF upload
+Streamlit input page:
+- Two inputs: job description (paste or sample) + resume PDF upload
 - Calls the FastAPI backend at /analyze
-- Displays the tailored resume and intermediate analysis outputs
-- Supports complete tailored resume preview when full resume text is returned
-- Allows users to view key modifications and export results in PDF, text, or JSON format
+- Stores the response in session state and routes to the Results page
 """
 
-import json
 import requests
 import streamlit as st
 
 API_URL = "http://localhost:8000"
 
-# Page config 
+# ── Page config ──────────────────────────────────────────────────────────────
+
 st.set_page_config(
     page_title="Resume Tailoring Assistant",
     page_icon="📄",
@@ -23,20 +21,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Session state initialization
+# ── Session state ────────────────────────────────────────────────────────────
+
 if "analysis_result" not in st.session_state:
     st.session_state.analysis_result = None
 if "show_modifications" not in st.session_state:
     st.session_state.show_modifications = False
 
-# Light styling
+# ── Light styling ────────────────────────────────────────────────────────────
 
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 1.6rem;
+    padding-top: 5rem;
     padding-bottom: 1.2rem;
     max-width: 1180px;
+}
+header[data-testid="stHeader"] {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(6px);
 }
 h1, h2, h3 {
     letter-spacing: -0.02em;
@@ -71,7 +74,8 @@ button[kind="secondary"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Header 
+# ── Header ───────────────────────────────────────────────────────────────────
+
 st.markdown("""
 <div style="
     margin: 0.35rem 0 1rem 0;
@@ -106,14 +110,14 @@ st.markdown("""
 
 with st.expander("How to Use", expanded=False):
     st.markdown("""
-1. Paste a target job description or choose a sample role  
-2. Upload your existing resume in PDF format  
-3. Click **Tailor My Resume**  
-4. Review the matched, missing, and weakly expressed items  
+1. Paste a target job description or choose a sample role
+2. Upload your existing resume in PDF format
+3. Click **Tailor My Resume**
+4. Review the matched, missing, and weakly expressed items
 5. Check the revised summary, reordered skills, and rewritten bullet points
 """)
 
-# Sample JDs 
+# ── Sample JDs ───────────────────────────────────────────────────────────────
 
 sample_jds = {
     "Graduate Data Analyst": """
@@ -204,10 +208,10 @@ Preferred skills:
 Qualifications:
 - Current university student in computer science, artificial intelligence, data science, or related field
 - Coursework or project experience in AI / ML is desirable
-"""
+""",
 }
 
-# Inputs
+# ── Inputs ───────────────────────────────────────────────────────────────────
 
 st.markdown("## Input")
 
@@ -233,14 +237,14 @@ with col_left:
         else:
             selected_jd = st.selectbox(
                 "Choose a sample JD",
-                list(sample_jds.keys())
+                list(sample_jds.keys()),
             )
             jd_text = sample_jds[selected_jd]
             st.text_area(
                 "Sample JD Preview",
                 value=jd_text,
                 height=220,
-                disabled=True
+                disabled=True,
             )
 
 with col_right:
@@ -250,17 +254,17 @@ with col_right:
             label="Upload your resume (PDF only)",
             type=["pdf"],
         )
-        
+
         st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
         submitted = st.button(
             "Tailor My Resume",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
         )
 
-# Main action
+# ── Submit ───────────────────────────────────────────────────────────────────
+
 if submitted:
-    # Validation first
     if not jd_text.strip():
         st.error("Please enter or select a job description.")
         st.stop()
@@ -269,7 +273,6 @@ if submitted:
         st.error("Please upload your resume PDF.")
         st.stop()
 
-    # Only reset after validation passes
     st.session_state.analysis_result = None
     st.session_state.show_modifications = False
 
@@ -299,8 +302,8 @@ if submitted:
             try:
                 detail = response.json().get("detail", str(e))
             except Exception:
-                detail = str(e)
-            st.error(f"Backend error: {detail}")
+                detail = response.text or str(e)
+            st.error(f"Backend error ({response.status_code}): {detail}")
             st.stop()
 
         except Exception as e:

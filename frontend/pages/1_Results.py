@@ -1,60 +1,89 @@
+"""
+Results page: renders the tailored resume, alignment summary, and raw analysis,
+plus PDF / Text / JSON downloads.
+"""
+
 import json
-import streamlit as st
-from fpdf import FPDF
-import io
 import re
+import sys
+from pathlib import Path
+
+import streamlit as st
+
+# Make sibling pdf_export.py importable when Streamlit runs this from /pages
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pdf_export import tailored_resume_to_pdf  # noqa: E402
 
 
-def generate_pdf(tailored_data=None, full_text=None):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Tailored Resume", ln=True, align="C")
-    pdf.ln(10)
+def _safe_filename(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "resume").strip())
+    return cleaned.strip("_") or "resume"
 
-    if full_text:
-        pdf.set_font("Helvetica", "", 10)
-        lines = full_text.split('\n')
-        usable_width = pdf.w - pdf.l_margin - pdf.r_margin
 
-        for line in lines:
-            pdf.set_x(pdf.l_margin)
-            if line.strip():
-                pdf.multi_cell(usable_width, 5, line)
-            else:
-                pdf.ln(3)
+def _resume_to_plain_text(tailored: dict) -> str:
+    lines: list[str] = []
+    name = tailored.get("candidate_name") or ""
+    if name:
+        lines.append(name)
+        lines.append("=" * len(name))
+        lines.append("")
 
-    else:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Professional Summary", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        summary = tailored_data.get("professional_summary", "")
-        pdf.multi_cell(0, 5, summary)
-        pdf.ln(5)
+    summary = tailored.get("professional_summary", "")
+    if summary:
+        lines.append("PROFESSIONAL SUMMARY")
+        lines.append(summary)
+        lines.append("")
 
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Skills", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        skills = tailored_data.get("reordered_skills", [])
-        skills_text = " • ".join(skills) if skills else "—"
-        pdf.multi_cell(0, 5, skills_text)
-        pdf.ln(5)
+    skills = tailored.get("skills", [])
+    if skills:
+        lines.append("SKILLS")
+        lines.append(" · ".join(skills))
+        lines.append("")
 
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, "Updated Achievements", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        bullets = tailored_data.get("rewritten_bullets", [])
-        for i, bullet in enumerate(bullets, 1):
-            revised = bullet.get("revised", "")
-            if revised.strip():
-                pdf.multi_cell(0, 5, f"{i}. {revised}")
+    work = tailored.get("work_experience", [])
+    if work:
+        lines.append("WORK EXPERIENCE")
+        for role in work:
+            end = role.get("end_date") or "Present"
+            lines.append(
+                f"{role.get('title', '')} — {role.get('company', '')}  "
+                f"({role.get('start_date', '')} – {end})"
+            )
+            for b in role.get("bullets", []):
+                lines.append(f"  • {b}")
+            lines.append("")
 
-    pdf_bytes = io.BytesIO()
-    pdf_output = pdf.output()
-    pdf_bytes.write(pdf_output)
-    pdf_bytes.seek(0)
-    return pdf_bytes.getvalue()
+    education = tailored.get("education", [])
+    if education:
+        lines.append("EDUCATION")
+        for edu in education:
+            year = edu.get("graduation_year")
+            suffix = f" ({year})" if year else ""
+            lines.append(f"{edu.get('degree', '')} — {edu.get('institution', '')}{suffix}")
+            gpa = edu.get("gpa")
+            if gpa is not None:
+                lines.append(f"  GPA: {gpa}")
+            coursework = edu.get("relevant_coursework", [])
+            if coursework:
+                lines.append(f"  Relevant coursework: {', '.join(coursework)}")
+            lines.append("")
 
+    projects = tailored.get("projects", [])
+    if projects:
+        lines.append("PROJECTS")
+        for p in projects:
+            lines.append(p.get("name", ""))
+            techs = p.get("technologies", [])
+            if techs:
+                lines.append(f"  Tech: {', '.join(techs)}")
+            for b in p.get("bullets", []):
+                lines.append(f"  • {b}")
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# ── Page config ──────────────────────────────────────────────────────────────
 
 st.set_page_config(
     page_title="Resume Tailoring Assistant",
@@ -62,6 +91,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ── Guard: must have an analysis result ──────────────────────────────────────
 
 if "analysis_result" not in st.session_state or st.session_state.analysis_result is None:
     st.warning("No analysis result found yet.")
@@ -72,12 +103,18 @@ if "analysis_result" not in st.session_state or st.session_state.analysis_result
 if "show_modifications" not in st.session_state:
     st.session_state.show_modifications = False
 
+# ── Light styling ────────────────────────────────────────────────────────────
+
 st.markdown("""
 <style>
 .block-container {
-    padding-top: 1.5rem;
+    padding-top: 5rem;
     padding-bottom: 2rem;
     max-width: 1180px;
+}
+header[data-testid="stHeader"] {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(6px);
 }
 h1, h2, h3 {
     letter-spacing: -0.02em;
@@ -114,18 +151,21 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 </style>
 """, unsafe_allow_html=True)
 
+# ── Top bar ──────────────────────────────────────────────────────────────────
+
 top1, top2 = st.columns([5, 2], vertical_alignment="center")
 with top1:
     st.title("Tailored Resume Results")
     st.caption("Review the tailored resume, key changes, and matching summary.")
 with top2:
-    if st.button("← Back to Input", width="stretch"):
+    if st.button("← Back to Input", use_container_width=True):
         st.switch_page("app.py")
 
-result = st.session_state.analysis_result
-raw_alignment = result.get("alignment", "{}")
-alignment_preview = {}
+# ── Parse results ────────────────────────────────────────────────────────────
 
+result = st.session_state.analysis_result
+
+raw_alignment = result.get("alignment", "{}")
 try:
     alignment_preview = json.loads(raw_alignment)
 except json.JSONDecodeError:
@@ -136,7 +176,13 @@ missing_preview = alignment_preview.get("missing", [])
 weak_preview = alignment_preview.get("weak_matches", [])
 
 total_items = len(matched_preview) + len(missing_preview) + len(weak_preview)
-fit_score = round(((len(matched_preview) + 0.5 * len(weak_preview)) / total_items) * 100) if total_items > 0 else 0
+fit_score = (
+    round(((len(matched_preview) + 0.5 * len(weak_preview)) / total_items) * 100)
+    if total_items > 0
+    else 0
+)
+
+# ── Success banner ───────────────────────────────────────────────────────────
 
 st.markdown(
     f"""
@@ -153,7 +199,7 @@ st.markdown(
         Resume tailored successfully · Estimated fit: <strong>{fit_score}%</strong>
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 m1, m2, m3, m4 = st.columns(4)
@@ -164,84 +210,97 @@ m4.metric("Weak Matches", len(weak_preview))
 
 st.divider()
 
-raw = result.get("tailored_resume", "")
+# ── Tailored resume parsing ──────────────────────────────────────────────────
+
+raw_tailored = result.get("tailored_resume", "")
 try:
-    tailored = json.loads(raw)
+    tailored = json.loads(raw_tailored)
 except json.JSONDecodeError:
     st.error("Tailored resume output is not valid JSON.")
+    st.markdown(raw_tailored)
     st.stop()
 
-full_resume_text = tailored.get("full_resume_text", "")
-full_resume_text = re.sub(r"\n{3,}", "\n\n", full_resume_text).strip()
+# ── Segmented navigation ─────────────────────────────────────────────────────
 
 selected_view = st.segmented_control(
     "Results Navigation",
-    ["Final Resume", "Match Summary", "Key Modifications"],
+    ["Final Resume", "Match Summary", "JD Analysis", "Resume Parsed"],
     default="Final Resume",
     width="stretch",
     label_visibility="collapsed",
 )
 
+# ── View 1: Final Resume ─────────────────────────────────────────────────────
+
 if selected_view == "Final Resume":
-    if full_resume_text:
-        with st.container(border=True):
-            st.subheader("Complete Tailored Resume")
-            st.markdown(
-                f"""
-                <div style="
-                    background: white;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 16px;
-                    padding: 20px 22px;
-                    line-height: 1.8;
-                    font-size: 16px;
-                    color: #374151;
-                    white-space: pre-wrap;
-                ">
-                {full_resume_text}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-    else:
-        with st.container(border=True):
-            st.subheader("Tailored Resume Preview")
+    with st.container(border=True):
+        name = tailored.get("candidate_name") or "—"
+        st.markdown(f"# {name}")
 
-            st.markdown("**Professional Summary**")
-            st.write(tailored.get("professional_summary", "—"))
+        summary = tailored.get("professional_summary", "")
+        if summary:
+            st.markdown("### Professional Summary")
+            st.write(summary)
 
-            st.markdown("**Skills**")
-            skills = tailored.get("reordered_skills", [])
-            st.write(" • ".join(skills) if skills else "—")
+        skills = tailored.get("skills", [])
+        if skills:
+            st.markdown("### Skills")
+            st.write(" · ".join(skills))
 
-            st.markdown("**Updated Achievements**")
-            bullets = tailored.get("rewritten_bullets", [])
-            if bullets:
-                for i, bullet in enumerate(bullets, 1):
-                    revised = bullet.get("revised", "")
-                    if revised.strip():
-                        st.markdown(f"{i}. {revised}")
-            else:
-                st.write("—")
+        work = tailored.get("work_experience", [])
+        if work:
+            st.markdown("### Work Experience")
+            for role in work:
+                end = role.get("end_date") or "Present"
+                st.markdown(
+                    f"**{role.get('title', '')}** — {role.get('company', '')}  "
+                    f"  *{role.get('start_date', '')} – {end}*"
+                )
+                for b in role.get("bullets", []):
+                    st.markdown(f"- {b}")
+                st.write("")
+
+        education = tailored.get("education", [])
+        if education:
+            st.markdown("### Education")
+            for edu in education:
+                line = f"**{edu.get('degree', '')}** — {edu.get('institution', '')}"
+                year = edu.get("graduation_year")
+                if year:
+                    line += f"  *({year})*"
+                st.markdown(line)
+                gpa = edu.get("gpa")
+                if gpa is not None:
+                    st.caption(f"GPA: {gpa}")
+                coursework = edu.get("relevant_coursework", [])
+                if coursework:
+                    st.caption("Relevant coursework: " + ", ".join(coursework))
+
+        projects = tailored.get("projects", [])
+        if projects:
+            st.markdown("### Projects")
+            for p in projects:
+                st.markdown(f"**{p.get('name', '')}**")
+                techs = p.get("technologies", [])
+                if techs:
+                    st.caption("Tech: " + ", ".join(techs))
+                for b in p.get("bullets", []):
+                    st.markdown(f"- {b}")
+                st.write("")
 
     st.divider()
 
-    pdf_data = generate_pdf(
-        full_text=full_resume_text if full_resume_text else None,
-        tailored_data=tailored if not full_resume_text else None
-    )
+    # ── Export ───────────────────────────────────────────────────────────────
 
-    plain_text = full_resume_text if full_resume_text else f"""TAILORED RESUME
+    file_stem = _safe_filename(tailored.get("candidate_name", "resume"))
+    plain_text = _resume_to_plain_text(tailored)
 
-Professional Summary:
-{tailored.get('professional_summary', '')}
-
-Skills:
-{chr(10).join('• ' + skill for skill in tailored.get('reordered_skills', []))}
-
-Updated Achievements:
-{chr(10).join('• ' + b.get('revised', '') for b in tailored.get('rewritten_bullets', []) if b.get('revised', '').strip())}
-"""
+    try:
+        pdf_bytes = tailored_resume_to_pdf(tailored)
+        pdf_error: str | None = None
+    except Exception as exc:
+        pdf_bytes = b""
+        pdf_error = str(exc)
 
     with st.container(border=True):
         st.subheader("Export Resume")
@@ -250,29 +309,36 @@ Updated Achievements:
         dl_col1, dl_col2, dl_col3 = st.columns(3)
 
         with dl_col1:
-            st.download_button(
-                "PDF Resume",
-                data=pdf_data,
-                file_name="tailored_resume.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+            if pdf_error:
+                st.error(f"Could not build PDF: {pdf_error}")
+            else:
+                st.download_button(
+                    "PDF Resume",
+                    data=pdf_bytes,
+                    file_name=f"{file_stem}_tailored.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+
         with dl_col2:
             st.download_button(
-               "Text Version",
-               data=plain_text,
-               file_name="tailored_resume.txt",
-               mime="text/plain",
-               use_container_width=True
+                "Text Version",
+                data=plain_text,
+                file_name=f"{file_stem}_tailored.txt",
+                mime="text/plain",
+                use_container_width=True,
             )
+
         with dl_col3:
             st.download_button(
                 "JSON Output",
                 data=json.dumps(tailored, indent=2),
-                file_name="tailored_resume.json",
+                file_name=f"{file_stem}_tailored.json",
                 mime="application/json",
-                use_container_width=True
+                use_container_width=True,
             )
+
+# ── View 2: Match Summary ────────────────────────────────────────────────────
 
 elif selected_view == "Match Summary":
     c1, c2, c3 = st.columns(3)
@@ -299,34 +365,24 @@ elif selected_view == "Match Summary":
                 st.markdown(f"**Resume bullet:** {w.get('resume_bullet', '')}")
                 st.caption(w.get("reason", ""))
 
-elif selected_view == "Key Modifications":
-    with st.container(border=True):
-        st.subheader("Professional Summary")
-        st.write(tailored.get("professional_summary", "—"))
+# ── View 3: JD Analysis ──────────────────────────────────────────────────────
 
+elif selected_view == "JD Analysis":
+    raw_jd = result.get("jd_parsed", "{}")
     with st.container(border=True):
-        st.subheader("Reordered Skills")
-        skills = tailored.get("reordered_skills", [])
-        if skills:
-            st.write("  •  ".join(skills))
-        else:
-            st.write("—")
+        st.subheader("Parsed Job Description")
+        try:
+            st.json(json.loads(raw_jd))
+        except json.JSONDecodeError:
+            st.text(raw_jd)
 
+# ── View 4: Resume Parsed ────────────────────────────────────────────────────
+
+elif selected_view == "Resume Parsed":
+    raw_resume = result.get("resume_parsed", "{}")
     with st.container(border=True):
-        st.subheader("Rewritten Bullet Points")
-        bullets = tailored.get("rewritten_bullets", [])
-        if bullets:
-            for i, b in enumerate(bullets, 1):
-                with st.expander(f"Bullet {i}", expanded=(i == 1)):
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        with st.container(border=True):
-                            st.markdown("**Original**")
-                            st.write(b.get("original", ""))
-                    with c2:
-                        with st.container(border=True):
-                            st.markdown("**Revised**")
-                            st.write(b.get("revised", ""))
-                    st.caption(f"Rationale: {b.get('rationale', '')}")
-        else:
-            st.info("No bullet rewrites generated.")
+        st.subheader("Parsed Resume")
+        try:
+            st.json(json.loads(raw_resume))
+        except json.JSONDecodeError:
+            st.text(raw_resume)
