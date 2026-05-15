@@ -127,9 +127,9 @@ A reproducible evaluation of the embedding scorer against the Kaggle [*Resume Da
 
 | Module | Owner |
 |---|---|
-| Architecture, orchestration, integration | Person 1 |
-| Stage 1 — JD parser | Person 2 |
-| Stage 2 — Resume parser | Person 3 |
-| Stage 2.5 / 3 — Embedding & alignment | Person 4 |
-| Stage 4 — Generator | Person 5 |
-| Frontend & export | Person 6 |
+| Architecture, orchestration, integration | Yufan Gong |
+| Stage 1 — JD parser | Nguyen Thao Nhi Truong |
+| Stage 2 — Resume parser | Lin Li |
+| Stage 2.5 / 3 — Embedding & alignment | Jinyu Yan |
+| Stage 4 — Generator | Myeongjin Han |
+| Frontend & export | Lujia Ouyang |
